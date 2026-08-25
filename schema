@@ -1,0 +1,207 @@
+-- 0. 啟用 pgcrypto 擴充套件
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- 1. 建立資料表 (Tables)
+CREATE TABLE IF NOT EXISTS public.portfolios (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name text NOT NULL DEFAULT '我的 ETF 投資組合',
+  monthly_dividend_target numeric(14,2) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.etfs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code varchar(10) NOT NULL UNIQUE,
+  name text,
+  market varchar(20),
+  currency varchar(10) NOT NULL DEFAULT 'TWD',
+  current_price numeric(12,4),
+  data_source text,
+  last_synced_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.holdings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
+  etf_id uuid NOT NULL REFERENCES public.etfs(id),
+  lots numeric(12,4) NOT NULL CHECK (lots >= 0),
+  average_cost numeric(12,4) NOT NULL CHECK (average_cost >= 0),
+  current_price numeric(12,4),
+  manual_dividend_enabled boolean NOT NULL DEFAULT true,
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(portfolio_id, etf_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.dividends (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  etf_id uuid NOT NULL REFERENCES public.etfs(id) ON DELETE CASCADE,
+  ex_date date,
+  pay_date date,
+  dividend_per_unit numeric(12,6) NOT NULL CHECK (dividend_per_unit >= 0),
+  source text NOT NULL DEFAULT 'manual',
+  is_manual boolean NOT NULL DEFAULT true,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.dividend_schedules (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  etf_id uuid NOT NULL REFERENCES public.etfs(id) ON DELETE CASCADE,
+  month_no smallint NOT NULL CHECK (month_no BETWEEN 1 AND 12),
+  expected_dividend_per_unit numeric(12,6) NOT NULL DEFAULT 0,
+  source text NOT NULL DEFAULT 'manual',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(etf_id, month_no)
+);
+
+CREATE TABLE IF NOT EXISTS public.price_history (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  etf_id uuid NOT NULL REFERENCES public.etfs(id) ON DELETE CASCADE,
+  price_date date NOT NULL,
+  close_price numeric(12,4) NOT NULL CHECK (close_price >= 0),
+  source text NOT NULL DEFAULT 'manual',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(etf_id, price_date)
+);
+
+CREATE TABLE IF NOT EXISTS public.dividend_goals (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  portfolio_id uuid NOT NULL REFERENCES public.portfolios(id) ON DELETE CASCADE,
+  target_monthly_income numeric(14,2) NOT NULL CHECK (target_monthly_income >= 0),
+  target_yearly_income numeric(14,2),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2. 建立索引 (Indexes)
+CREATE INDEX IF NOT EXISTS idx_portfolios_user_id ON public.portfolios(user_id);
+CREATE INDEX IF NOT EXISTS idx_holdings_portfolio ON public.holdings(portfolio_id);
+CREATE INDEX IF NOT EXISTS idx_dividends_etf ON public.dividends(etf_id);
+CREATE INDEX IF NOT EXISTS idx_dividends_ex_date ON public.dividends(ex_date);
+CREATE INDEX IF NOT EXISTS idx_schedule_etf_month ON public.dividend_schedules(etf_id, month_no);
+CREATE INDEX IF NOT EXISTS idx_price_history_etf_date ON public.price_history(etf_id, price_date);
+
+-- 3. 開啟 Row Level Security (RLS)
+ALTER TABLE public.portfolios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.holdings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dividend_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.etfs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dividends ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.dividend_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.price_history ENABLE ROW LEVEL SECURITY;
+
+-- 4. 安全策略設定 (先 DROP 再 CREATE 防重複報錯)
+DROP POLICY IF EXISTS "users view own portfolios" ON public.portfolios;
+CREATE POLICY "users view own portfolios" ON public.portfolios FOR SELECT USING (auth.uid()=user_id);
+
+DROP POLICY IF EXISTS "users insert own portfolios" ON public.portfolios;
+CREATE POLICY "users insert own portfolios" ON public.portfolios FOR INSERT WITH CHECK (auth.uid()=user_id);
+
+DROP POLICY IF EXISTS "users update own portfolios" ON public.portfolios;
+CREATE POLICY "users update own portfolios" ON public.portfolios FOR UPDATE USING (auth.uid()=user_id);
+
+DROP POLICY IF EXISTS "users delete own portfolios" ON public.portfolios;
+CREATE POLICY "users delete own portfolios" ON public.portfolios FOR DELETE USING (auth.uid()=user_id);
+
+DROP POLICY IF EXISTS "users view own holdings" ON public.holdings;
+CREATE POLICY "users view own holdings" ON public.holdings FOR SELECT USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users insert own holdings" ON public.holdings;
+CREATE POLICY "users insert own holdings" ON public.holdings FOR INSERT WITH CHECK (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users update own holdings" ON public.holdings;
+CREATE POLICY "users update own holdings" ON public.holdings FOR UPDATE USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users delete own holdings" ON public.holdings;
+CREATE POLICY "users delete own holdings" ON public.holdings FOR DELETE USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users view own goals" ON public.dividend_goals;
+CREATE POLICY "users view own goals" ON public.dividend_goals FOR SELECT USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users insert own goals" ON public.dividend_goals;
+CREATE POLICY "users insert own goals" ON public.dividend_goals FOR INSERT WITH CHECK (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users update own goals" ON public.dividend_goals;
+CREATE POLICY "users update own goals" ON public.dividend_goals FOR UPDATE USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "users delete own goals" ON public.dividend_goals;
+CREATE POLICY "users delete own goals" ON public.dividend_goals FOR DELETE USING (
+  EXISTS(SELECT 1 FROM public.portfolios p WHERE p.id=portfolio_id AND p.user_id=auth.uid())
+);
+
+DROP POLICY IF EXISTS "authenticated users view etfs" ON public.etfs;
+CREATE POLICY "authenticated users view etfs" ON public.etfs FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "authenticated users view dividends" ON public.dividends;
+CREATE POLICY "authenticated users view dividends" ON public.dividends FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "authenticated users view schedules" ON public.dividend_schedules;
+CREATE POLICY "authenticated users view schedules" ON public.dividend_schedules FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "authenticated users view prices" ON public.price_history;
+CREATE POLICY "authenticated users view prices" ON public.price_history FOR SELECT TO authenticated USING (true);
+
+-- 5. 自動更新時間 Trigger
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
+
+DROP TRIGGER IF EXISTS portfolios_updated_at ON public.portfolios;
+CREATE TRIGGER portfolios_updated_at BEFORE UPDATE ON public.portfolios FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS holdings_updated_at ON public.holdings;
+CREATE TRIGGER holdings_updated_at BEFORE UPDATE ON public.holdings FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS etfs_updated_at ON public.etfs;
+CREATE TRIGGER etfs_updated_at BEFORE UPDATE ON public.etfs FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS dividends_updated_at ON public.dividends;
+CREATE TRIGGER dividends_updated_at BEFORE UPDATE ON public.dividends FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS schedules_updated_at ON public.dividend_schedules;
+CREATE TRIGGER schedules_updated_at BEFORE UPDATE ON public.dividend_schedules FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS goals_updated_at ON public.dividend_goals;
+CREATE TRIGGER goals_updated_at BEFORE UPDATE ON public.dividend_goals FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- 6. 建立 View
+CREATE OR REPLACE VIEW public.portfolio_dividend_summary AS
+SELECT h.id holding_id, h.portfolio_id, e.code, e.name, h.lots, h.average_cost, h.current_price,
+coalesce(sum(d.dividend_per_unit),0) annual_dividend_per_unit,
+h.lots*1000*coalesce(sum(d.dividend_per_unit),0) estimated_annual_dividend,
+CASE WHEN h.average_cost>0 THEN coalesce(sum(d.dividend_per_unit),0)/h.average_cost ELSE 0 END cost_yield,
+CASE WHEN coalesce(h.current_price,0)>0 THEN coalesce(sum(d.dividend_per_unit),0)/h.current_price ELSE 0 END current_yield
+FROM public.holdings h JOIN public.etfs e ON e.id=h.etf_id
+LEFT JOIN public.dividends d ON d.etf_id=h.etf_id AND d.ex_date>=current_date-interval '365 days'
+GROUP BY h.id, h.portfolio_id, e.code, e.name, h.lots, h.average_cost, h.current_price;
+
+-- 7. 寫入初始資料
+INSERT INTO public.etfs (code, name, market, data_source) VALUES
+('0056','元大高股息','TWSE','manual'),
+('00878','國泰永續高股息','TWSE','manual'),
+('00919','群益台灣精選高息','TWSE','manual'),
+('00929','復華台灣科技優息','TWSE','manual'),
+('0050','元大台灣50','TWSE','manual')
+ON CONFLICT (code) DO NOTHING;
