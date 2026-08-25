@@ -217,7 +217,7 @@
           
           stock.loading = true;
           try {
-            const res = await fetch(`http://127.0.0.1:8000/api/etf/${stock.symbol}`);
+            const res = await fetch(`/api/etf/${stock.symbol}`);
             if (!res.ok) throw new Error();
             const data = await res.json();
             
