@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>台灣 ETF 股息月月領與資產儀表板 Pro</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 transition-colors duration-200 font-sans min-h-screen">
+  <div id="app" class="max-w-7xl mx-auto p-4 md:p-8">
+    
+    <!-- 頁頭與功能按鈕 -->
+    <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+      <div>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          💰 ETF 股息現金流儀表板
+          <span class="text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-normal px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800">Pro 升級版</span>
+        </h1>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">自動試算二代健保、月度配息、資產權重與年化殖利率</p>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <!-- 匯入 / 匯出按鈕 -->
+        <button @click="exportCSV" class="text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 px-3 py-2 rounded-lg transition">
+          📥 匯出 CSV
+        </button>
+        <label class="text-xs bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 px-3 py-2 rounded-lg transition cursor-pointer">
+          📤 匯入 CSV
+          <input type="file" @change="importCSV" accept=".csv" class="hidden">
+        </label>
+        
+        <!-- 黑夜模式切換 -->
+        <button @click="toggleDarkMode" class="p-2 bg-slate-200 dark:bg-slate-800 rounded-lg text-lg border border-slate-300 dark:border-slate-700 hover:scale-105 transition">
+          {{ isDarkMode ? '☀️' : '🌙' }}
+        </button>
+      </div>
+    </header>
+
+    <!-- 頂部關鍵指標數據 -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">總市值 (預估)</div>
+        <div class="text-2xl font-extrabold mt-1 text-slate-900 dark:text-white">${{ formatNumber(totalCost) }}</div>
+      </div>
+      
+      <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">預估稅前年股息</div>
+        <div class="text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400">${{ formatNumber(totalAnnualDividends) }}</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">預估二代健保總扣繳</div>
+        <div class="text-2xl font-extrabold mt-1 text-rose-500 dark:text-rose-400">${{ formatNumber(totalNhiFee) }}</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">平均實領月薪</div>
+        <div class="text-2xl font-extrabold mt-1 text-blue-600 dark:text-blue-400">${{ formatNumber(Math.round((totalAnnualDividends - totalNhiFee) / 12)) }}</div>
+      </div>
+
+      <div class="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+        <div class="text-xs text-slate-500 dark:text-slate-400 font-medium">整體預估殖利率</div>
+        <div class="text-2xl font-extrabold mt-1 text-purple-600 dark:text-purple-400">{{ overallYield }}%</div>
+      </div>
+    </div>
+
+    <!-- 持股資料明細與管理 -->
+    <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 mb-8 shadow-sm">
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          持股資產明細
+        </h2>
+        <button @click="addStock" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1 shadow-sm">
+          <span>+</span> 新增 ETF
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-100 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 uppercase text-xs">
+            <tr>
+              <th class="p-3 rounded-l-lg">代號/名稱</th>
+              <th class="p-3">持有張數</th>
+              <th class="p-3">買入均價</th>
+              <th class="p-3">當前股價</th>
+              <th class="p-3">單期配息</th>
+              <th class="p-3">配息頻率</th>
+              <th class="p-3">預估殖利率</th>
+              <th class="p-3">資產占比</th>
+              <th class="p-3 rounded-r-lg">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+            <tr v-for="(item, index) in portfolio" :key="index" class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition">
+              <!-- 代號 / 名稱 -->
+              <td class="p-3">
+                <div class="flex items-center space-x-2">
+                  <input 
+                    v-model="item.symbol" 
+                    @change="fetchStockInfo(index)" 
+                    placeholder="如 0056" 
+                    class="w-24 border rounded-lg px-2 py-1.5 uppercase font-mono border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  >
+                  <span v-if="item.loading" class="text-xs text-blue-500 animate-pulse">連線中...</span>
+                  <span v-else class="font-medium text-slate-700 dark:text-slate-200 text-xs">{{ item.name }}</span>
+                </div>
+              </td>
+
+              <!-- 持有張數 -->
+              <td class="p-3">
+                <input v-model.number="item.sheets" type="number" min="0" class="w-20 border rounded-lg px-2 py-1.5 border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"> 張
+              </td>
+
+              <!-- 買入成本 -->
+              <td class="p-3">
+                <input v-model.number="item.costPrice" type="number" step="0.1" placeholder="可不填" class="w-20 border rounded-lg px-2 py-1.5 border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"> 元
+              </td>
+
+              <!-- 當前股價 -->
+              <td class="p-3">
+                <input v-model.number="item.price" type="number" step="0.1" class="w-20 border rounded-lg px-2 py-1.5 border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"> 元
+              </td>
+
+              <!-- 單期配息 -->
+              <td class="p-3">
+                <input v-model.number="item.lastDividend" type="number" step="0.01" class="w-20 border rounded-lg px-2 py-1.5 border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm"> 元
+              </td>
+
+              <!-- 配息頻率 -->
+              <td class="p-3">
+                <select v-model="item.frequency" class="border rounded-lg px-2 py-1.5 border-slate-300 dark:border-slate-600 dark:bg-slate-900 dark:text-white text-sm">
+                  <option value="12">月配</option>
+                  <option value="4">季配</option>
+                  <option value="2">半年配</option>
+                  <option value="1">年配</option>
+                </select>
+              </td>
+
+              <!-- 殖利率 -->
+              <td class="p-3 font-semibold text-emerald-600 dark:text-emerald-400">
+                {{ calculateYield(item) }}%
+              </td>
+
+              <!-- 資產比重條 -->
+              <td class="p-3 w-32">
+                <div class="text-xs text-slate-500 mb-1">{{ getAssetWeight(item) }}%</div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                  <div class="bg-blue-600 h-full transition-all duration-300" :style="{ width: getAssetWeight(item) + '%' }"></div>
+                </div>
+              </td>
+
+              <!-- 刪除按鈕 -->
+              <td class="p-3">
+                <button @click="removeStock(index)" class="text-rose-500 hover:text-rose-700 text-xs font-medium">刪除</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 12 個月實領股息預測曆 (含健保警示) -->
+    <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 shadow-sm">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900 dark:text-white">12 個月現金流預估 (已扣除二代健保)</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">單次配息達 NT$20,000 時自動試算 2.11% 補充保費</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div v-for="m in 12" :key="m" class="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-slate-50 dark:bg-slate-900/50 flex flex-col justify-between">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-slate-400 uppercase">{{ m }} 月</span>
+            <span v-if="monthlyNhi[m-1] > 0" class="text-[10px] bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300 px-1.5 py-0.5 rounded">
+              扣健保 ${{ Math.round(monthlyNhi[m-1]) }}
+            </span>
+          </div>
+          <div class="text-xl font-black text-slate-800 dark:text-slate-100">
+            ${{ formatNumber(Math.round(monthlyNetDividends[m - 1])) }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, watch, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const isDarkMode = ref(false);
+
+        const portfolio = ref([
+          { symbol: '0056', name: '元大高股息', sheets: 10, costPrice: 35.0, price: 38.5, lastDividend: 1.07, frequency: 4, payMonths: [1, 4, 7, 10], loading: false },
+          { symbol: '00878', name: '國泰永續高股息', sheets: 15, costPrice: 20.0, price: 22.8, lastDividend: 0.51, frequency: 4, payMonths: [2, 5, 8, 11], loading: false },
+          { symbol: '00929', name: '復華台灣科技優息', sheets: 20, costPrice: 18.0, price: 19.5, lastDividend: 0.18, frequency: 12, payMonths: [1,2,3,4,5,6,7,8,9,10,11,12], loading: false }
+        ]);
+
+        // 切換與初始化深色模式
+        const toggleDarkMode = () => {
+          isDarkMode.value = !isDarkMode.value;
+          document.documentElement.classList.toggle('dark', isDarkMode.value);
+          localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light');
+        };
+
+        const fetchStockInfo = async (index) => {
+          const stock = portfolio.value[index];
+          if (!stock.symbol) return;
+          
+          stock.loading = true;
+          try {
+            const res = await fetch(`http://127.0.0.1:8000/api/etf/${stock.symbol}`);
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            
+            stock.name = data.name;
+            stock.price = data.price;
+            stock.lastDividend = data.lastDividend;
+            stock.frequency = data.frequency;
+            stock.payMonths = data.payMonths;
+          } catch (e) {
+            stock.name = '自訂/無資料';
+          } finally {
+            stock.loading = false;
+          }
+        };
+
+        onMounted(() => {
+          // 主題載入
+          const savedTheme = localStorage.getItem('theme');
+          if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            isDarkMode.value = true;
+            document.documentElement.classList.add('dark');
+          }
+
+          // 持股紀錄載入
+          const savedData = localStorage.getItem('my_etf_portfolio_v2');
+          if (savedData) {
+            try { portfolio.value = JSON.parse(savedData); } catch (e) {}
+          }
+        });
+
+        watch(portfolio, (newVal) => {
+          localStorage.setItem('my_etf_portfolio_v2', JSON.stringify(newVal));
+        }, { deep: true });
+
+        const addStock = () => {
+          portfolio.value.push({
+            symbol: '', name: '請輸入代號', sheets: 1, costPrice: 0, price: 0, lastDividend: 0, frequency: 4, payMonths: [1,4,7,10], loading: false
+          });
+        };
+
+        const removeStock = (idx) => portfolio.value.splice(idx, 1);
+
+        const calculateYield = (item) => {
+          if (!item.price || item.price <= 0) return '0.00';
+          return ((item.lastDividend * item.frequency / item.price) * 100).toFixed(2);
+        };
+
+        // 總資產金額
+        const totalCost = computed(() => {
+          return portfolio.value.reduce((sum, i) => sum + (i.sheets * 1000 * i.price), 0);
+        });
+
+        // 算出資產比重 %
+        const getAssetWeight = (item) => {
+          if (totalCost.value === 0) return '0.0';
+          const itemVal = item.sheets * 1000 * item.price;
+          return ((itemVal / totalCost.value) * 100).toFixed(1);
+        };
+
+        // 預估年總股息
+        const totalAnnualDividends = computed(() => {
+          return portfolio.value.reduce((sum, i) => sum + (i.lastDividend * i.frequency * i.sheets * 1000), 0);
+        });
+
+        // 每月股息試算 (未扣健保)
+        const monthlyGrossDividends = computed(() => {
+          const months = new Array(12).fill(0);
+          portfolio.value.forEach(item => {
+            const singleAmount = item.lastDividend * item.sheets * 1000;
+            if (item.payMonths) {
+              item.payMonths.forEach(m => {
+                if (m >= 1 && m <= 12) months[m - 1] += singleAmount;
+              });
+            }
+          });
+          return months;
+        });
+
+        // 二代健保補充保費試算 (單筆 > 20,000 元扣 2.11%)
+        const monthlyNhi = computed(() => {
+          const months = new Array(12).fill(0);
+          portfolio.value.forEach(item => {
+            const singleAmount = item.lastDividend * item.sheets * 1000;
+            if (singleAmount >= 20000 && item.payMonths) {
+              const fee = singleAmount * 0.0211;
+              item.payMonths.forEach(m => {
+                if (m >= 1 && m <= 12) months[m - 1] += fee;
+              });
+            }
+          });
+          return months;
+        });
+
+        const totalNhiFee = computed(() => monthlyNhi.value.reduce((a, b) => a + b, 0));
+
+        // 每月淨領股息
+        const monthlyNetDividends = computed(() => {
+          return monthlyGrossDividends.value.map((gross, idx) => gross - monthlyNhi.value[idx]);
+        });
+
+        const overallYield = computed(() => {
+          if (totalCost.value === 0) return '0.00';
+          return ((totalAnnualDividends.value / totalCost.value) * 100).toFixed(2);
+        });
+
+        // CSV 匯出
+        const exportCSV = () => {
+          let csvContent = "data:text/csv;charset=utf-8,代號,名稱,張數,成本價,當前股價,單期配息,頻率\n";
+          portfolio.value.forEach(i => {
+            csvContent += `${i.symbol},${i.name},${i.sheets},${i.costPrice},${i.price},${i.lastDividend},${i.frequency}\n`;
+          });
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement("a");
+          link.setAttribute("href", encodedUri);
+          link.setAttribute("download", `my_etf_portfolio.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        // CSV 匯入
+        const importCSV = (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const lines = e.target.result.split('\n').slice(1);
+            const loaded = [];
+            lines.forEach(line => {
+              const cols = line.split(',');
+              if (cols.length >= 7) {
+                loaded.push({
+                  symbol: cols[0],
+                  name: cols[1],
+                  sheets: parseFloat(cols[2]) || 0,
+                  costPrice: parseFloat(cols[3]) || 0,
+                  price: parseFloat(cols[4]) || 0,
+                  lastDividend: parseFloat(cols[5]) || 0,
+                  frequency: parseInt(cols[6]) || 4,
+                  payMonths: [1, 4, 7, 10],
+                  loading: false
+                });
+              }
+            });
+            if (loaded.length > 0) portfolio.value = loaded;
+          };
+          reader.readAsText(file);
+        };
+
+        const formatNumber = (val) => new Intl.NumberFormat('zh-TW').format(val || 0);
+
+        return {
+          isDarkMode, toggleDarkMode, portfolio, addStock, removeStock, fetchStockInfo,
+          calculateYield, totalCost, getAssetWeight, totalAnnualDividends, totalNhiFee,
+          monthlyNhi, monthlyNetDividends, overallYield, exportCSV, importCSV, formatNumber
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
