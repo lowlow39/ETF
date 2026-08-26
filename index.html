@@ -232,7 +232,7 @@
           stock.loading = true;
           try {
             // 修正：加上 /etf/ 路由
-            const res = await fetch(`/api/etf/${stock.symbol}`);
+            const res = await fetch(`/api/${stock.symbol}`);
             if (!res.ok) throw new Error();
             const data = await res.json();
             
