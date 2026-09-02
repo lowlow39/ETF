@@ -60,10 +60,23 @@
     
     .cashflow { padding: 20px 22px 24px; }
     .months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 9px; align-items: end; height: 194px; padding-top: 20px; }
-    .month { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 40px; }
+    .month { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 40px; cursor: pointer; }
     .bar-value { font-size: 11px; color: var(--ink); text-align: center; min-height: 31px; display: flex; align-items: end; justify-content: center; }
     .bar { min-height: 5px; background: linear-gradient(#10b981, #059669); border-radius: 7px 7px 2px 2px; }
     .month-label { color: var(--muted); font-size: 12px; text-align: center; padding-top: 8px; }
+    
+    /* 每月股票明細區域 */
+    .cashflow-details-title { margin-top: 28px; margin-bottom: 12px; font-size: 15px; font-weight: 600; color: var(--ink); border-top: 1px solid var(--line); padding-top: 20px; }
+    .cashflow-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+    .month-card { background: var(--card-bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+    .month-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
+    .month-card-title { font-weight: 700; color: #60a5fa; }
+    .month-card-total { font-weight: 700; color: var(--green); }
+    .month-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px; }
+    .month-item-symbol { font-weight: 600; color: var(--ink); }
+    .month-item-note { font-size: 11px; color: var(--muted); margin-left: 4px; }
+    .month-item-amount { font-weight: 600; color: var(--ink); }
+
     .cashflow-total { margin-top: 22px; display: flex; gap: 28px; color: var(--muted); }
     .cashflow-total strong { color: var(--ink); margin-left: 6px; }
     
@@ -122,12 +135,16 @@
       <div class="section-top">
         <div>
           <h2 id="cashflowTitle">本年度配息金流</h2>
-          <p class="hint">依公開資料的除息日歸入月份；若資料尚未公告，月份會顯示 $0。</p>
+          <p class="hint">依公開資料的除息日歸入月份；下方可查看各月份詳細配息股票與金額。</p>
         </div>
       </div>
       <div class="cashflow">
-        <div class="mobile-note hint">可左右滑動查看每個月</div>
+        <div class="mobile-note hint">可左右滑動查看每個月圖表</div>
         <div class="months" id="months"></div>
+        
+        <div class="cashflow-details-title">各月份配息股票明細</div>
+        <div class="cashflow-details" id="cashflowDetails"></div>
+
         <div class="cashflow-total">
           <span>年度配息合計<strong id="yearTotal">$0</strong></span>
           <span>平均每月<strong id="monthlyAverage">$0</strong></span>
@@ -222,17 +239,73 @@
     }
 
     function renderCashflow(){ 
-      const values=Array(12).fill(0); 
-      holdings.forEach(h=>(h.dividends||[]).forEach(d=>{ 
-        const date=new Date(d.date+'T00:00:00'); 
-        if(date.getFullYear()===year) values[date.getMonth()]+=number(h.lots)*1000*number(d.amount); 
-      })); 
-      const max=Math.max(...values,1); 
-      $('#cashflowTitle').textContent=`${year} 年配息金流`; 
-      $('#months').innerHTML=values.map((v,i)=>`<div class="month"><div class="bar-value">${v?money(v):''}</div><div class="bar" style="height:${Math.max(5,(v/max)*118)}px"></div><div class="month-label">${i+1} 月</div></div>`).join(''); 
-      const total=values.reduce((a,b)=>a+b,0); 
-      $('#yearTotal').textContent=money(total); 
-      $('#monthlyAverage').textContent=money(total/12); 
+      const monthlyTotals = Array(12).fill(0);
+      const monthlyItems = Array.from({ length: 12 }, () => []);
+
+      holdings.forEach(h => {
+        const shares = number(h.lots) * 1000;
+        (h.dividends || []).forEach(d => { 
+          const date = new Date(d.date + 'T00:00:00'); 
+          if (date.getFullYear() === year) {
+            const m = date.getMonth();
+            const amt = shares * number(d.amount);
+            monthlyTotals[m] += amt;
+            monthlyItems[m].push({
+              symbol: h.symbol || '未命名',
+              name: h.name || '',
+              perShare: number(d.amount),
+              lots: number(h.lots),
+              amount: amt,
+              date: d.date
+            });
+          }
+        });
+      }); 
+
+      const max = Math.max(...monthlyTotals, 1); 
+      $('#cashflowTitle').textContent = `${year} 年配息金流`; 
+      
+      // 1. 渲染長條圖（帶有 Hover 提示）
+      $('#months').innerHTML = monthlyTotals.map((v, i) => {
+        const items = monthlyItems[i];
+        const tooltip = items.length 
+          ? items.map(item => `${item.symbol}: ${money(item.amount)} ($${item.perShare}/股)`).join('\n')
+          : `${i + 1} 月無配息`;
+        return `<div class="month" title="${tooltip}">
+          <div class="bar-value">${v ? money(v) : ''}</div>
+          <div class="bar" style="height:${Math.max(5, (v / max) * 118)}px"></div>
+          <div class="month-label">${i + 1} 月</div>
+        </div>`;
+      }).join(''); 
+
+      // 2. 渲染每月股票配息明細卡片
+      const activeMonths = monthlyItems.map((items, idx) => ({ month: idx + 1, items, total: monthlyTotals[idx] })).filter(m => m.total > 0);
+      
+      const detailsHtml = activeMonths.length > 0 
+        ? activeMonths.map(m => `
+            <div class="month-card">
+              <div class="month-card-header">
+                <span class="month-card-title">${m.month} 月</span>
+                <span class="month-card-total">${money(m.total)}</span>
+              </div>
+              ${m.items.map(item => `
+                <div class="month-item">
+                  <div>
+                    <span class="month-item-symbol">${item.symbol}</span>
+                    <span class="month-item-note">($${item.perShare}/股)</span>
+                  </div>
+                  <span class="month-item-amount">${money(item.amount)}</span>
+                </div>
+              `).join('')}
+            </div>
+          `).join('')
+        : `<div class="empty" style="padding: 10px 0; grid-column: 1 / -1;">尚無 ${year} 年已公告之股票配息明細。</div>`;
+
+      $('#cashflowDetails').innerHTML = detailsHtml;
+
+      const total = monthlyTotals.reduce((a, b) => a + b, 0); 
+      $('#yearTotal').textContent = money(total); 
+      $('#monthlyAverage').textContent = money(total / 12); 
     }
 
     function render(){ renderRows(); renderSummary(); renderCashflow(); }
