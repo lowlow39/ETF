@@ -65,7 +65,6 @@
     .bar { min-height: 5px; background: linear-gradient(#10b981, #059669); border-radius: 7px 7px 2px 2px; }
     .month-label { color: var(--muted); font-size: 12px; text-align: center; padding-top: 8px; }
     
-    /* 每月股票明細區域 */
     .cashflow-details-title { margin-top: 28px; margin-bottom: 12px; font-size: 15px; font-weight: 600; color: var(--ink); border-top: 1px solid var(--line); padding-top: 20px; }
     .cashflow-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
     .month-card { background: var(--card-bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
@@ -147,7 +146,7 @@
 
         <div class="cashflow-total">
           <span>年度配息合計<strong id="yearTotal">$0</strong></span>
-          <span>平均每月<strong id="monthlyAverage">$0</strong></span>
+          <span>平均每月 (依有領息月份算)<strong id="monthlyAverage">$0</strong></span>
         </div>
       </div>
     </section>
@@ -265,7 +264,7 @@
       const max = Math.max(...monthlyTotals, 1); 
       $('#cashflowTitle').textContent = `${year} 年配息金流`; 
       
-      // 1. 渲染長條圖（帶有 Hover 提示）
+      // 1. 渲染長條圖
       $('#months').innerHTML = monthlyTotals.map((v, i) => {
         const items = monthlyItems[i];
         const tooltip = items.length 
@@ -304,8 +303,12 @@
       $('#cashflowDetails').innerHTML = detailsHtml;
 
       const total = monthlyTotals.reduce((a, b) => a + b, 0); 
+      // 動態計算有配息入帳的月份數量作為分母
+      const activeMonthCount = activeMonths.length;
+      const avgMonthly = activeMonthCount > 0 ? total / activeMonthCount : 0;
+
       $('#yearTotal').textContent = money(total); 
-      $('#monthlyAverage').textContent = money(total / 12); 
+      $('#monthlyAverage').textContent = money(avgMonthly); 
     }
 
     function render(){ renderRows(); renderSummary(); renderCashflow(); }
