@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的 ETF 現金流</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --paper: #131b2e;
+      --card-bg: #182238;
+      --line: #22304a;
+      --ink: #f1f5f9;
+      --muted: #94a3b8;
+      --green: #10b981;
+      --red: #f43f5e;
+      --blue: #3b82f6;
+      --navy: #1e293b;
+      --gold: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); font: 15px/1.45 Inter, "Noto Sans TC", "Microsoft JhengHei", sans-serif; background: var(--bg); }
+    header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border-bottom: 1px solid var(--line); color: white; padding: 42px max(24px, calc((100% - 1180px) / 2)); }
+    header .eyebrow { color: #60a5fa; font-size: 13px; letter-spacing: .1em; margin-bottom: 8px; font-weight: 600; }
+    h1 { font-size: 32px; letter-spacing: -.04em; margin: 0 0 10px; }
+    header p { color: var(--muted); margin: 0; }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 50px; }
+    
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: -17px; }
+    .card { background: var(--card-bg); border: 1px solid var(--line); border-radius: 16px; padding: 18px; box-shadow: 0 8px 22px rgba(0,0,0,0.3); }
+    .card .label { color: var(--muted); font-size: 13px; }
+    .card .value { font-size: 26px; font-weight: 750; letter-spacing: -.04em; margin-top: 6px; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    
+    .section { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; margin-top: 22px; overflow: hidden; }
+    .section-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 21px 22px 16px; border-bottom: 1px solid var(--line); }
+    h2 { margin: 0; font-size: 19px; color: var(--ink); }
+    .hint { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+    
+    button { font: inherit; cursor: pointer; border: 0; border-radius: 9px; padding: 9px 13px; font-weight: 650; transition: all 0.2s; }
+    .primary { background: var(--blue); color: white; }
+    .primary:hover { background: #2563eb; }
+    .secondary { color: #60a5fa; background: #1e293b; border: 1px solid var(--line); }
+    .secondary:hover { background: #334155; }
+    .remove { color: var(--red); background: rgba(244, 63, 94, 0.1); padding: 7px 10px; }
+    .remove:hover { background: rgba(244, 63, 94, 0.2); }
+    
+    .table-wrap { overflow: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 1040px; }
+    th { color: var(--muted); background: #0f172a; font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; padding: 11px 12px; border-bottom: 1px solid var(--line); }
+    td { border-top: 1px solid var(--line); padding: 11px 12px; vertical-align: middle; }
+    
+    input { width: 100%; min-width: 74px; border: 1px solid var(--line); border-radius: 8px; background: #0f172a; color: var(--ink); padding: 8px; font: inherit; outline: none; }
+    input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+    
+    .name { display: block; min-height: 18px; color: var(--muted); font-size: 12px; padding: 3px 1px 0; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .money { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .price-note { font-size: 11px; color: var(--muted); display: block; margin-top: 4px; }
+    
+    .cashflow { padding: 20px 22px 24px; }
+    .months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 9px; align-items: end; height: 194px; padding-top: 20px; }
+    .month { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; min-width: 40px; }
+    .bar-value { font-size: 11px; color: var(--ink); text-align: center; min-height: 31px; display: flex; align-items: end; justify-content: center; }
+    .bar { min-height: 5px; background: linear-gradient(#10b981, #059669); border-radius: 7px 7px 2px 2px; }
+    .month-label { color: var(--muted); font-size: 12px; text-align: center; padding-top: 8px; }
+    .cashflow-total { margin-top: 22px; display: flex; gap: 28px; color: var(--muted); }
+    .cashflow-total strong { color: var(--ink); margin-left: 6px; }
+    
+    .notice { margin-top: 18px; color: var(--muted); font-size: 12px; padding: 0 2px; }
+    .empty { color: var(--muted); padding: 25px; text-align: center; }
+    .mobile-note { display: none; }
+    
+    @media (max-width: 800px) {
+      header { padding: 32px 20px; }
+      h1 { font-size: 26px; }
+      main { padding: 20px 14px 38px; }
+      .summary { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: -10px; }
+      .card { padding: 14px; }
+      .card .value { font-size: 21px; }
+      .section-top { align-items: flex-start; padding: 17px 16px; }
+      .cashflow { padding: 16px; overflow: auto; }
+      .months { min-width: 620px; }
+      .mobile-note { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">PERSONAL PORTFOLIO</div>
+    <h1>我的 ETF 現金流</h1>
+    <p>掌握持股市值、未實現損益與今年的股息入帳節奏。</p>
+  </header>
+  <main>
+    <section class="summary">
+      <div class="card"><div class="label">目前市值</div><div class="value" id="marketValue">$0</div></div>
+      <div class="card"><div class="label">投入成本</div><div class="value" id="costValue">$0</div></div>
+      <div class="card"><div class="label">未實現損益</div><div class="value" id="pnlValue">$0</div></div>
+      <div class="card"><div class="label">今年已公告／入帳配息</div><div class="value" id="dividendValue">$0</div></div>
+    </section>
+
+    <section class="section">
+      <div class="section-top">
+        <div>
+          <h2>持股資產明細</h2>
+          <p class="hint">輸入台股 ETF 代號後自動同步名稱與現價；持有張數 × 1,000 股。</p>
+        </div>
+        <button class="primary" id="addRow">＋ 新增 ETF</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>代號 / 名稱</th><th>持有張數</th><th>平均成本</th><th>現價</th><th>市值</th><th>損益</th><th>今年配息 / 股</th><th>更新</th><th></th></tr>
+          </thead>
+          <tbody id="holdings"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="emptyState">尚未加入 ETF，按右上角新增即可開始。</div>
+    </section>
+
+    <section class="section">
+      <div class="section-top">
+        <div>
+          <h2 id="cashflowTitle">本年度配息金流</h2>
+          <p class="hint">依公開資料的除息日歸入月份；若資料尚未公告，月份會顯示 $0。</p>
+        </div>
+      </div>
+      <div class="cashflow">
+        <div class="mobile-note hint">可左右滑動查看每個月</div>
+        <div class="months" id="months"></div>
+        <div class="cashflow-total">
+          <span>年度配息合計<strong id="yearTotal">$0</strong></span>
+          <span>平均每月<strong id="monthlyAverage">$0</strong></span>
+        </div>
+      </div>
+    </section>
+    <p class="notice">行情與配息資料來自公開市場資訊，僅供個人記錄與試算；成交前請以券商或投信公告為準。資料會儲存在此瀏覽器中。</p>
+  </main>
+  <script>
+    const KEY = 'etf-cashflow-v1'; const year = new Date().getFullYear();
+    let holdings = JSON.parse(localStorage.getItem(KEY) || '[]');
+    const $ = (s) => document.querySelector(s);
+    const money = (n) => new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(n || 0);
+    const number = (n) => Number(n) || 0;
+    function save(){ localStorage.setItem(KEY, JSON.stringify(holdings)); }
+    function input(value, type, placeholder='') { return `<input aria-label="${type}" data-field="${type}" ${type === 'symbol' ? '' : 'type="number" step="any" min="0"'} value="${value ?? ''}" placeholder="${placeholder}">`; }
+    
+    function updateComputed(row, h) {
+      const shares = number(h.lots) * 1000, value = shares * number(h.price), cost = shares * number(h.average), pnl = value - cost;
+      row.querySelector('[data-value]').textContent = money(value);
+      const pnlCell = row.querySelector('[data-pnl]'); 
+      pnlCell.textContent = `${pnl >= 0 ? '+' : ''}${money(pnl)}`; 
+      pnlCell.className = `money ${pnl >= 0 ? 'positive' : 'negative'}`;
+      row.querySelector('[data-dividend]').textContent = money((h.dividends || []).reduce((s,d) => s + number(d.amount), 0));
+    }
+
+    function renderRows(){
+      const body = $('#holdings'); $('#emptyState').style.display = holdings.length ? 'none' : 'block';
+      body.innerHTML = holdings.map((h,i) => { 
+        const shares = number(h.lots)*1000, value=shares*number(h.price), cost=shares*number(h.average), pnl=value-cost; 
+        return `<tr data-index="${i}">
+          <td>${input(h.symbol,'symbol','例 0050')}<span class="name">${h.name || '輸入代號自動更新'}</span></td>
+          <td>${input(h.lots,'lots')}</td>
+          <td>${input(h.average,'average')}</td>
+          <td>${input(h.price,'price')}<span class="price-note">${h.updatedAt ? '已更新' : '可手動輸入'}</span></td>
+          <td class="money" data-value>${money(value)}</td>
+          <td class="money ${pnl>=0?'positive':'negative'}" data-pnl>${pnl>=0?'+':''}${money(pnl)}</td>
+          <td class="money" data-dividend>${money((h.dividends||[]).reduce((s,d)=>s+number(d.amount),0))}</td>
+          <td><button class="secondary update">更新資料</button></td>
+          <td><button class="remove">刪除</button></td>
+        </tr>`; 
+      }).join('');
+      
+      body.querySelectorAll('input').forEach(el=>el.addEventListener('change',onEdit)); 
+      body.querySelectorAll('.remove').forEach(el=>el.addEventListener('click',remove)); 
+      body.querySelectorAll('.update').forEach(el=>el.addEventListener('click',updateQuote));
+    }
+
+    async function onEdit(e){
+      const row=e.target.closest('tr'), h=holdings[row.dataset.index], key=e.target.dataset.field;
+      const oldSymbol = h.symbol;
+      h[key]=key==='symbol'?e.target.value.trim().toUpperCase():number(e.target.value);
+      
+      if(key==='symbol') { 
+        e.target.value = h.symbol;
+        if(h.symbol && h.symbol !== oldSymbol) {
+          h.name='讀取中…'; 
+          row.querySelector('.name').textContent='讀取中…';
+          updateQuote({ target: row.querySelector('.update') });
+        }
+      }
+      save(); updateComputed(row,h); renderSummary(); renderCashflow();
+    }
+
+    function remove(e){ holdings.splice(e.target.closest('tr').dataset.index,1); save(); render(); }
+    
+    async function updateQuote(e){
+      const button=e.target, h=holdings[button.closest('tr').dataset.index];
+      if(!h.symbol) return alert('請先輸入 ETF 代號');
+      if(location.protocol === 'file:') return alert('「更新資料」需要透過 Vercel 網址開啟，因為它會由網站的安全資料服務讀取行情。直接開啟 HTML 檔時仍可手動填入現價與配息。');
+      
+      button.textContent='更新中…'; button.disabled=true;
+      try { 
+        const r=await fetch(`/api/quote?symbol=${encodeURIComponent(h.symbol)}`); 
+        const data=await r.json(); 
+        if(!r.ok) throw new Error(data.error); 
+        h.name=data.name; h.price=data.price; h.dividends=data.dividends; h.updatedAt=data.updatedAt; 
+        save(); render(); 
+      } catch(err) { 
+        alert(err.message || '更新失敗，請稍後再試或手動輸入。'); 
+        button.textContent='更新資料'; button.disabled=false; 
+      }
+    }
+
+    function renderSummary(){ 
+      const shares=h=>number(h.lots)*1000; 
+      const value=holdings.reduce((s,h)=>s+shares(h)*number(h.price),0), cost=holdings.reduce((s,h)=>s+shares(h)*number(h.average),0), pnl=value-cost, dividends=holdings.reduce((s,h)=>s+(h.dividends||[]).reduce((x,d)=>x+shares(h)*number(d.amount),0),0); 
+      $('#marketValue').textContent=money(value); 
+      $('#costValue').textContent=money(cost); 
+      const p=$('#pnlValue'); p.textContent=`${pnl>=0?'+':''}${money(pnl)}`; p.className='value '+(pnl>=0?'positive':'negative'); 
+      $('#dividendValue').textContent=money(dividends); 
+    }
+
+    function renderCashflow(){ 
+      const values=Array(12).fill(0); 
+      holdings.forEach(h=>(h.dividends||[]).forEach(d=>{ 
+        const date=new Date(d.date+'T00:00:00'); 
+        if(date.getFullYear()===year) values[date.getMonth()]+=number(h.lots)*1000*number(d.amount); 
+      })); 
+      const max=Math.max(...values,1); 
+      $('#cashflowTitle').textContent=`${year} 年配息金流`; 
+      $('#months').innerHTML=values.map((v,i)=>`<div class="month"><div class="bar-value">${v?money(v):''}</div><div class="bar" style="height:${Math.max(5,(v/max)*118)}px"></div><div class="month-label">${i+1} 月</div></div>`).join(''); 
+      const total=values.reduce((a,b)=>a+b,0); 
+      $('#yearTotal').textContent=money(total); 
+      $('#monthlyAverage').textContent=money(total/12); 
+    }
+
+    function render(){ renderRows(); renderSummary(); renderCashflow(); }
+    $('#addRow').addEventListener('click',()=>{ holdings.push({symbol:'',lots:1,average:0,price:0,dividends:[]}); save(); render(); });
+    render();
+  </script>
+</body>
+</html>
